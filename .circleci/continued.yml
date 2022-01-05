@@ -1,0 +1,61 @@
+version: 2.1
+
+defaults:
+  environment: &environment
+    DOCKER_REGISTRY: docker.io
+    DOCKER_USER: kelvintaywl
+
+parameters:
+  build-image:
+    type: boolean
+    default: false
+  update-swarm:
+    type: boolean
+    default: false
+
+jobs:
+  noop:
+    docker:
+      - image: cimg/base:stable
+    steps:
+      - run: echo "done"
+  publish_runner_image:
+    environment:
+      <<: *environment
+    docker:
+      - image: cimg/base:stable
+    parameters:
+      image_name:
+        type: string
+        default: 'circleci-launch-agent'
+      image_tag:
+        type: string
+        default: 'latest'
+    steps:
+      - checkout
+      - setup_remote_docker:
+          # https://circleci.com/docs/2.0/building-docker-images/#docker-version
+          version: 20.10.7
+      - run:
+          name: Build image
+          command: |
+            cd runner
+            docker image build --tag "${DOCKER_REGISTRY}/${DOCKER_USER}/<< parameters.image_name >>:${CIRCLE_SHA1}" .
+            docker image tag "${DOCKER_REGISTRY}/${DOCKER_USER}/<< parameters.image_name >>:${CIRCLE_SHA1}" "${DOCKER_REGISTRY}/${DOCKER_USER}/<< parameters.image_name >>:<< parameters.image_tag >>"
+      - run:
+          name: Publish image
+          command: |
+            # login credentials should be provided via context or project environment variables.
+            echo $DOCKER_PASSWORD | docker login $DOCKER_REGISTRY --username $DOCKER_LOGIN --password-stdin
+            docker image push --all-tags "${DOCKER_REGISTRY}/${DOCKER_USER}/<< parameters.image_name >>"
+
+workflows:
+  publish_runner:
+    when: << pipeline.parameters.build-image >>
+    jobs:
+      - publish_runner_image:
+          context: docker
+  update_swarm:
+    when: << pipeline.parameters.update-swarm >>
+    jobs:
+      - noop
